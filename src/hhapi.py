@@ -4,14 +4,15 @@ from typing import Any, cast
 
 import requests
 
+from src.base_api import VacancyAPI
+
 logger = logging.getLogger("HeadHunterApi")
 
 
-class HeadHunterApi:
+class HeadHunterApi(VacancyAPI):
     """Класс для работы с API сайта HeadHunter, получения списков вакансий и работодателей.
 
     Attributes:
-        _search_text (str): Текст поиска в названиях вакансий
         _search_area (str): Регион поиска
     """
 
@@ -22,8 +23,7 @@ class HeadHunterApi:
         "Connection": "keep-alive",
     }
 
-    def __init__(self, search_text: str, search_area: str) -> None:
-        self._search_text = search_text
+    def __init__(self, search_area: str) -> None:
         self._search_area = search_area
 
     @staticmethod
@@ -53,38 +53,32 @@ class HeadHunterApi:
         logger.error(info)
         raise ConnectionError(info)
 
-    def get_employers_vacancies(self, employer_id: str) -> list[dict | None]:
+    def get_employers_vacancies(self, employer_id: str) -> list[dict]:
         """Метод получения информации об открытых вакансиях работодателя.
 
         Args:
             employer_id (str): Уникальный идентификационный номер работодателя на HH.ru
         """
         url = f"{self.BASE_URL}/vacancies"
+
         params = {
             "employer_id": employer_id,
-            "text": self._search_text,
             "area": self._search_area,
-            "per_page": 20,
-            "page": 1,
+            "per_page": 20
         }
-        data = self._make_request(url, params=params, headers=self.HEADERS)
-        vacancies_list = []
 
-        if len(data["items"]) > 0:
-            vacancies_list.extend(data["items"])
+        vacancies = []
+        data = self._make_request(url, params=params, headers=self.HEADERS)
+
+        if data.get("items"):
+            vacancies.extend(data["items"])
 
             if data["pages"] > 2:
-                params = {
-                    "employer_id": employer_id,
-                    "text": self._search_text,
-                    "area": self._search_area,
-                    "per_page": 20,
-                    "page": 2,
-                }
+                params["page"] = 1
 
                 time.sleep(2)
                 data = self._make_request(url, params=params, headers=self.HEADERS)
 
-                vacancies_list.extend(data["items"])
+                vacancies.extend(data["items"])
 
-        return vacancies_list
+        return vacancies
