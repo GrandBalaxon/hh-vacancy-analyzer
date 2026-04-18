@@ -1,23 +1,30 @@
+import logging
+import time
 from typing import Any, cast
 
 import requests
 
+logger = logging.getLogger("HeadHunterApi")
+
 
 class HeadHunterApi:
-    """Класс для работы с API сайта HeadHunter, получения списков вакансий и работодателей."""
+    """Класс для работы с API сайта HeadHunter, получения списков вакансий и работодателей.
+
+    Attributes:
+        _search_text (str): Текст поиска в названиях вакансий
+        _search_area (str): Регион поиска
+    """
 
     BASE_URL = "https://api.hh.ru"
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json",
-        "Connection": "keep-alive"
+        "Connection": "keep-alive",
     }
 
-    def __init__(self, company_name: str, search_text: str, search_area: str) -> None:
-        self._company_name = company_name
+    def __init__(self, search_text: str, search_area: str) -> None:
         self._search_text = search_text
         self._search_area = search_area
-        self._company_employers_ids = []
 
     @staticmethod
     def _make_request(
@@ -28,72 +35,56 @@ class HeadHunterApi:
         """
         Выполняет GET-запрос к указанному URL с параметрами и заголовками.
         Проверяет статус ответа и возвращает декодированный JSON.
-        В случае ошибки выбрасывает исключение.
+        В случае ошибки пытается подключиться еще 2 раза, затем выбрасывает исключение.
         """
-        response = requests.get(url, params=params, headers=headers)
-        if response.status_code != 200:
-            raise Exception(f"Ошибка подключения: {response.status_code} - {response.text}")
+        for attempt in range(3):
+            response = requests.get(url, params=params, headers=headers)
 
-        return cast(dict[str, Any], response.json())
+            if response.status_code == 200:
+                logger.info("Успешное подключение.")
+                return cast(dict[str, Any], response.json())
+            elif response.status_code != 200:
+                logger.warning(
+                    f"Ошибка подключения к ресурсу: {response.status_code}. Попытка повторного подключения."
+                )
+                time.sleep(2)
+
+        info = f"Ошибка подключения: {response.status_code} - {response.text}"
+        logger.error(info)
+        raise ConnectionError(info)
 
     def get_employers_vacancies(self, employer_id: str) -> list[dict | None]:
-        """"""
+        """Метод получения информации об открытых вакансиях работодателя.
+
+        Args:
+            employer_id (str): Уникальный идентификационный номер работодателя на HH.ru
+        """
         url = f"{self.BASE_URL}/vacancies"
         params = {
             "employer_id": employer_id,
             "text": self._search_text,
             "area": self._search_area,
-            "per_page": 100,
+            "per_page": 20,
+            "page": 1,
         }
         data = self._make_request(url, params=params, headers=self.HEADERS)
         vacancies_list = []
 
         if len(data["items"]) > 0:
-            pages = data["pages"]
+            vacancies_list.extend(data["items"])
 
-            for page_num in range(pages):
+            if data["pages"] > 2:
                 params = {
                     "employer_id": employer_id,
                     "text": self._search_text,
                     "area": self._search_area,
-                    "per_page": 100,
-                    "page": page_num,
+                    "per_page": 20,
+                    "page": 2,
                 }
+
+                time.sleep(2)
                 data = self._make_request(url, params=params, headers=self.HEADERS)
 
                 vacancies_list.extend(data["items"])
 
         return vacancies_list
-
-    def get_company_employers_ids(self) -> dict[str, Any]:
-        """"""
-        company_employers_ids = {}
-        url = f"{self.BASE_URL}/employers"
-        params = {
-            "text": self._company_name,
-            "per_page": 100,
-        }
-        data = self._make_request(url, params=params, headers=self.HEADERS)
-
-        if len(data["items"]) > 0:
-            pages = data["pages"]
-
-            for page_num in range(pages):
-                params["page"] = page_num
-                data = self._make_request(url, params=params, headers=self.HEADERS)
-
-                for employer in data["items"]:
-                    if employer["open_vacancies"] != 0:
-                        company_employers_ids[employer["id"]] = employer["name"]
-                        print(f"{employer["name"]} ({employer["id"]}): вакансий - {employer["open_vacancies"]}.")
-                    else:
-                        continue
-
-        return company_employers_ids
-
-
-if __name__ == '__main__':
-    api = HeadHunterApi("Yandex", "Python", "2")
-    vacancies = api.get_employers_vacancies("1740")
-    print(vacancies)
-    print(len(vacancies))

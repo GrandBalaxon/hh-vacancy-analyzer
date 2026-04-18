@@ -1,8 +1,8 @@
 import logging
 import psycopg2
 
-
 logger = logging.getLogger("db_manager")
+
 
 class DBManager:
     """"""
